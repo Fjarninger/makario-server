@@ -1,0 +1,21 @@
+{
+  "name": "makario-server",
+  "version": "1.0.0",
+  "description": "Backend Makario — Réseau professionnel Congo",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.1.1",
+    "socket.io": "^4.8.3"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
