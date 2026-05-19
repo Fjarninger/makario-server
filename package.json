@@ -1,7 +1,7 @@
 {
   "name": "makario-server",
-  "version": "1.0.0",
-  "description": "Backend Makario — Réseau professionnel Congo",
+  "version": "2.0.0",
+  "description": "Backend Makario — Réseau professionnel Congo (MongoDB)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -12,10 +12,11 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.4.0",
     "multer": "^2.1.1",
     "socket.io": "^4.8.3"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }

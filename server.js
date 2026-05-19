@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-//  MAKARIO BACKEND — server.js
-//  Stack : Node.js + Express + Socket.io  |  Stockage : mémoire
-//  Port  : 3000 (local) ou PORT (Railway/Render)
+//  MAKARIO BACKEND — server.js  v2.0
+//  Stack : Node.js + Express + Socket.io + MongoDB (Mongoose)
 // ═══════════════════════════════════════════════════════════════
 
 const express    = require('express');
@@ -12,374 +11,500 @@ const jwt        = require('jsonwebtoken');
 const path       = require('path');
 const fs         = require('fs');
 const multer     = require('multer');
+const mongoose   = require('mongoose');
 const { Server } = require('socket.io');
 
 const app        = express();
 const httpServer = http.createServer(app);
-const io         = new Server(httpServer, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
-});
+const io         = new Server(httpServer, { cors: { origin: '*', methods: ['GET','POST'] } });
 
-const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'makario_secret_2024_congo';
+const PORT        = process.env.PORT       || 3000;
+const JWT_SECRET  = process.env.JWT_SECRET || 'makario_secret_2024_congo';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/makario';
+
+// ─── CONNEXION MONGODB ────────────────────────────────────────
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('✅ MongoDB connecté'))
+  .catch(err => { console.error('❌ MongoDB:', err.message); process.exit(1); });
 
 app.use(cors());
 app.use(express.json());
 
-// ─── UPLOAD (Multer) ──────────────────────────────────────────────
+// ─── UPLOAD ──────────────────────────────────────────────────
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, file, cb) => {
-    const unique = Date.now() + '-' + Math.round(Math.random() * 1e6);
-    cb(null, unique + path.extname(file.originalname).toLowerCase());
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+    filename:    (_req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random()*1e6) + path.extname(file.originalname).toLowerCase()),
+  }),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|webp/;
-    const valid = allowed.test(path.extname(file.originalname).toLowerCase())
-               && allowed.test(file.mimetype);
-    if (valid) cb(null, true);
-    else cb(new Error('Seules les images sont acceptées (jpg, png, gif, webp)'));
-  },
+    /jpeg|jpg|png|gif|webp/.test(file.mimetype) ? cb(null, true) : cb(new Error('Images uniquement'));
+  }
 });
 
-// ─── SOCKET.IO ────────────────────────────────────────────────────
-io.use((socket, next) => {
-  const token = socket.handshake.auth?.token;
-  if (!token) return next(new Error('Non authentifié'));
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = db.users.find(u => u.id === payload.id);
-    if (!user) return next(new Error('Utilisateur introuvable'));
-    socket.user = { id: user.id, name: user.name };
-    next();
-  } catch { next(new Error('Token invalide')); }
-});
-
-io.on('connection', (socket) => {
-  socket.on('join_conv', (convId) => {
-    const conv = db.conversations.find(c => c.id === parseInt(convId));
-    if (conv && conv.participants.includes(socket.user.id)) {
-      socket.join('conv_' + convId);
-    }
-  });
-  socket.on('leave_conv', (convId) => socket.leave('conv_' + convId));
-});
-
-// ─── BASE DE DONNÉES EN MÉMOIRE ───────────────────────────────────
-let db = {
-  users: [],
-  companies: [
-    { id:1, name:'SIGTH-TECH CONGO', sector:'TIC', city:'Brazzaville', services:'Développement web et mobile, solutions informatiques sur mesure, hébergement cloud.', vision:'Être le partenaire N°1 du peuple congolais dans le domaine des TIC.', address:'84, Rue Mayama, Brazzaville', cover:'💻', init:'ST', ownerId:null },
-    { id:2, name:'BEST INFORMATIQUE', sector:'TIC', city:'Pointe-Noire', services:'Vente de matériel informatique, maintenance, formation, réseaux.', vision:'Digitaliser les entreprises congolaises à moindre coût.', address:'Centre-ville, Pointe-Noire', cover:'🖥️', init:'BI', ownerId:null },
-    { id:3, name:'EGCM', sector:'Éducation & Formation', city:'Brazzaville', services:'Formation professionnelle qualifiante, coaching emploi, stages en entreprise.', vision:"Former la jeunesse congolaise pour l'emploi de demain.", address:'84, Rue Mayama, Immeuble BGF1, 1er étage', cover:'📚', init:'EG', ownerId:null },
-    { id:4, name:'AOFIP', sector:'Éducation & Formation', city:'Brazzaville', services:'Formation professionnelle et qualifiante, insertion professionnelle, coaching.', vision:"Vers l'emploi, mais pas seul.", address:'Rue Matsoua, Brazzaville', cover:'🎓', init:'AO', ownerId:null },
-    { id:5, name:'AI COMMUNICATION', sector:'TIC', city:'Brazzaville', services:'Agence de communication digitale, création de contenu, réseaux sociaux, branding.', vision:'Booster la visibilité des marques congolaises.', address:'Plateau de 15 ans, Brazzaville', cover:'📡', init:'AI', ownerId:null },
-    { id:6, name:'MAGIC DESIGN', sector:'Culture & Arts', city:'Pointe-Noire', services:'Design graphique, identité visuelle, création de logo, impression.', vision:"L'art au service des entreprises.", address:'Lumumba, Pointe-Noire', cover:'🎨', init:'MD', ownerId:null },
-    { id:7, name:'MUSAS CONGO', sector:'Commerce', city:'Brazzaville', services:'Distribution alimentaire, import-export, grossiste, livraison.', vision:'Nourrir le Congo, de Brazzaville à Owando.', address:'Marché Total, Brazzaville', cover:'🛒', init:'MC', ownerId:null },
-    { id:8, name:'BTP PRO CONGO', sector:'BTP', city:'Dolisie', services:'Construction, rénovation, génie civil, architecture, études techniques.', vision:'Bâtir le Congo moderne, pierre par pierre.', address:'Centre, Dolisie', cover:'🏗️', init:'BP', ownerId:null },
-  ],
-  sectors: [
-    { id:'tic',       label:'TIC',                    icon:'💻', count:124 },
-    { id:'commerce',  label:'Commerce',                icon:'🛒', count:312 },
-    { id:'services',  label:'Prestations de services', icon:'⚙️', count:198 },
-    { id:'btp',       label:'BTP',                    icon:'🏗️', count:87  },
-    { id:'tourisme',  label:'Tourisme & Restauration', icon:'🍽️', count:64  },
-    { id:'culture',   label:'Culture & Arts',          icon:'🎨', count:43  },
-    { id:'sante',     label:'Santé',                  icon:'🏥', count:91  },
-    { id:'education', label:'Éducation & Formation',  icon:'📚', count:76  },
-  ],
-  news: [
-    { id:1, company:'EGCM', avatar:'EG', title:'Formation Femme & TIC — Inscriptions ouvertes!', body:'La prochaine session de formation Excel, comptabilité et bureautique commence le 14 Mars.', emoji:'📊', date:new Date(Date.now()-3600000).toISOString(), likes:24, authorId:null },
-    { id:2, company:'AOFIP', avatar:'AO', title:'Offre de stage bénévole en entreprise', body:"Je prépare mon stage en entreprise. Vers l'emploi mais pas seul.", emoji:'💼', date:new Date(Date.now()-7200000).toISOString(), likes:41, authorId:null },
-    { id:3, company:'AI COMMUNICATION', avatar:'AI', title:'Nouveau service : Community Management', body:'Nous lançons notre offre de gestion des réseaux sociaux pour les PME.', emoji:'📱', date:new Date(Date.now()-86400000).toISOString(), likes:18, authorId:null },
-    { id:4, company:'SIGTH-TECH CONGO', avatar:'ST', title:"Développement d'application mobile sur mesure", body:"Vous avez un projet d'application ? Nous transformons vos idées en solutions numériques performantes.", emoji:'📲', date:new Date(Date.now()-172800000).toISOString(), likes:56, authorId:null },
-  ],
-  conversations:  [],
-  messages:       {},  // { convId: [msg, ...] }
-  favorites:      {},  // { userId: [companyId, ...] }
-  newsLikes:      {},  // { newsId: [userId, ...] }
-  subscriptions:  {},  // { userId: { plan, method, price, activatedAt } }
-  nextId: {
-    user:5, company:9, news:5, conv:1
+// ─── SCHEMAS MONGOOSE ─────────────────────────────────────────
+const toJSON = {
+  toJSON: {
+    virtuals: true,
+    transform: (_doc, ret) => { ret.id = ret._id; delete ret._id; delete ret.__v; return ret; }
   }
 };
 
-// ─── MIDDLEWARE AUTH ───────────────────────────────────────────────
-function authMiddleware(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.json({ success:false, error:'Non authentifié' });
+const UserSchema = new mongoose.Schema({
+  name:       { type: String, required: true, trim: true },
+  email:      { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password:   { type: String, required: true },
+  profession: { type: String, default: '' },
+  city:       { type: String, default: '' },
+  avatar:     { type: String, default: null },
+  favorites:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'Company' }],
+  createdAt:  { type: Date, default: Date.now }
+}, toJSON);
+
+const CompanySchema = new mongoose.Schema({
+  name:      { type: String, required: true, trim: true },
+  sector:    { type: String, default: '' },
+  city:      { type: String, default: '' },
+  services:  { type: String, default: '' },
+  vision:    { type: String, default: '' },
+  address:   { type: String, default: '' },
+  phone:     { type: String, default: '' },
+  website:   { type: String, default: '' },
+  cover:     { type: String, default: '🏢' },
+  init:      { type: String, default: '?' },
+  ownerId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  verified:  { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+}, toJSON);
+
+const SectorSchema = new mongoose.Schema({
+  slug:  { type: String, unique: true },
+  label: String,
+  icon:  String,
+  count: { type: Number, default: 0 }
+}, toJSON);
+
+const NewsSchema = new mongoose.Schema({
+  company:  { type: String, default: 'Makario' },
+  avatar:   { type: String, default: 'MK' },
+  title:    { type: String, required: true },
+  body:     { type: String, required: true },
+  emoji:    { type: String, default: '📢' },
+  image:    { type: String, default: null },
+  likes:    { type: Number, default: 0 },
+  likedBy:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  comments: { type: Array, default: [] },
+  authorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  date:     { type: Date, default: Date.now }
+}, toJSON);
+
+const ConversationSchema = new mongoose.Schema({
+  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  name:      { type: String, default: 'Conversation' },
+  init:      { type: String, default: '?' },
+  createdAt: { type: Date, default: Date.now }
+}, toJSON);
+
+const MessageSchema = new mongoose.Schema({
+  conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: true },
+  senderId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  text:           { type: String, required: true },
+  date:           { type: Date, default: Date.now }
+}, toJSON);
+
+const SubscriptionSchema = new mongoose.Schema({
+  userId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+  plan:        { type: String, default: 'Gratuit' },
+  method:      { type: String, default: '' },
+  price:       { type: String, default: '0' },
+  activatedAt: { type: Date, default: Date.now }
+}, toJSON);
+
+const User         = mongoose.model('User', UserSchema);
+const Company      = mongoose.model('Company', CompanySchema);
+const Sector       = mongoose.model('Sector', SectorSchema);
+const News         = mongoose.model('News', NewsSchema);
+const Conversation = mongoose.model('Conversation', ConversationSchema);
+const Message      = mongoose.model('Message', MessageSchema);
+const Subscription = mongoose.model('Subscription', SubscriptionSchema);
+
+// ─── SEED — données initiales si DB vide ─────────────────────
+async function seedDB() {
+  // Entreprises
+  if (await Company.countDocuments() === 0) {
+    await Company.insertMany([
+      { name:'SIGTH-TECH CONGO',  sector:'TIC',                   city:'Brazzaville', services:"Développement web et mobile, solutions informatiques sur mesure, hébergement cloud.", vision:"Être le partenaire N°1 du peuple congolais dans le domaine des TIC.", address:'84, Rue Mayama, Brazzaville', cover:'💻', init:'ST', verified:true },
+      { name:'BEST INFORMATIQUE', sector:'TIC',                   city:'Pointe-Noire', services:"Vente de matériel informatique, maintenance, formation, réseaux.", vision:"Digitaliser les entreprises congolaises à moindre coût.", address:'Centre-ville, Pointe-Noire', cover:'🖥️', init:'BI' },
+      { name:'EGCM',              sector:'Éducation & Formation', city:'Brazzaville', services:"Formation professionnelle qualifiante, coaching emploi, stages en entreprise.", vision:"Former la jeunesse congolaise pour l'emploi de demain.", address:'84, Rue Mayama, Immeuble BGF1', cover:'📚', init:'EG', verified:true },
+      { name:'AOFIP',             sector:'Éducation & Formation', city:'Brazzaville', services:"Formation professionnelle et qualifiante, insertion professionnelle, coaching.", vision:"Vers l'emploi, mais pas seul.", address:'Rue Matsoua, Brazzaville', cover:'🎓', init:'AO' },
+      { name:'AI COMMUNICATION',  sector:'TIC',                   city:'Brazzaville', services:"Agence de communication digitale, création de contenu, réseaux sociaux, branding.", vision:"Booster la visibilité des marques congolaises.", address:'Plateau de 15 ans, Brazzaville', cover:'📡', init:'AI' },
+      { name:'MAGIC DESIGN',      sector:'Culture & Arts',        city:'Pointe-Noire', services:"Design graphique, identité visuelle, création de logo, impression.", vision:"L'art au service des entreprises.", address:'Lumumba, Pointe-Noire', cover:'🎨', init:'MD' },
+      { name:'MUSAS CONGO',       sector:'Commerce',              city:'Brazzaville', services:"Distribution alimentaire, import-export, grossiste, livraison.", vision:"Nourrir le Congo, de Brazzaville à Owando.", address:'Marché Total, Brazzaville', cover:'🛒', init:'MC' },
+      { name:'BTP PRO CONGO',     sector:'BTP',                   city:'Dolisie',     services:"Construction, rénovation, génie civil, architecture, études techniques.", vision:"Bâtir le Congo moderne, pierre par pierre.", address:'Centre, Dolisie', cover:'🏗️', init:'BP' },
+    ]);
+    console.log('✅ Entreprises initiales créées');
   }
-  try {
-    const payload = jwt.verify(header.slice(7), JWT_SECRET);
-    req.user = db.users.find(u => u.id === payload.id);
-    if (!req.user) return res.json({ success:false, error:'Utilisateur introuvable' });
-    next();
-  } catch {
-    return res.json({ success:false, error:'Token invalide' });
+
+  // Secteurs
+  if (await Sector.countDocuments() === 0) {
+    await Sector.insertMany([
+      { slug:'tic',       label:'TIC',                    icon:'💻', count:124 },
+      { slug:'commerce',  label:'Commerce',                icon:'🛒', count:312 },
+      { slug:'services',  label:'Prestations de services', icon:'⚙️', count:198 },
+      { slug:'btp',       label:'BTP',                    icon:'🏗️', count:87  },
+      { slug:'tourisme',  label:'Tourisme & Restauration', icon:'🍽️', count:64  },
+      { slug:'culture',   label:'Culture & Arts',          icon:'🎨', count:43  },
+      { slug:'sante',     label:'Santé',                  icon:'🏥', count:91  },
+      { slug:'education', label:'Éducation & Formation',  icon:'📚', count:76  },
+    ]);
+    console.log('✅ Secteurs initiaux créés');
   }
+
+  // Publications
+  if (await News.countDocuments() === 0) {
+    const t = Date.now();
+    await News.insertMany([
+      { company:'EGCM',           avatar:'EG', title:'Formation Femme & TIC — Inscriptions ouvertes!',       body:"La prochaine session de formation Excel, comptabilité et bureautique commence le 14 Mars.", emoji:'📊', likes:24, date:new Date(t-3600000) },
+      { company:'AOFIP',          avatar:'AO', title:'Offre de stage bénévole en entreprise',                body:"Je prépare mon stage en entreprise. Vers l'emploi mais pas seul.", emoji:'💼', likes:41, date:new Date(t-7200000) },
+      { company:'AI COMMUNICATION',avatar:'AI',title:'Nouveau service : Community Management',               body:"Nous lançons notre offre de gestion des réseaux sociaux pour les PME.", emoji:'📱', likes:18, date:new Date(t-86400000) },
+      { company:'SIGTH-TECH',     avatar:'ST', title:"Développement d'application mobile sur mesure",        body:"Vous avez un projet d'application ? Nous transformons vos idées en solutions numériques.", emoji:'📲', likes:56, date:new Date(t-172800000) },
+    ]);
+    console.log('✅ Publications initiales créées');
+  }
+}
+mongoose.connection.once('open', seedDB);
+
+// ─── HELPERS ─────────────────────────────────────────────────
+function safeUser(u) {
+  const obj = u.toJSON();
+  delete obj.password;
+  delete obj.favorites;
+  return obj;
 }
 
-function safeUser(u) {
-  const { password, ...safe } = u;
-  return safe;
+// ─── MIDDLEWARE AUTH ──────────────────────────────────────────
+async function authMiddleware(req, res, next) {
+  const h = req.headers.authorization;
+  if (!h?.startsWith('Bearer '))
+    return res.json({ success:false, error:'Non authentifié' });
+  try {
+    const { id } = jwt.verify(h.slice(7), JWT_SECRET);
+    req.user = await User.findById(id);
+    if (!req.user) return res.json({ success:false, error:'Utilisateur introuvable' });
+    next();
+  } catch { res.json({ success:false, error:'Token invalide' }); }
 }
+
+// ─── SOCKET.IO ────────────────────────────────────────────────
+io.use(async (socket, next) => {
+  try {
+    const { id } = jwt.verify(socket.handshake.auth?.token || '', JWT_SECRET);
+    const user = await User.findById(id);
+    if (!user) return next(new Error('Utilisateur introuvable'));
+    socket.userId = user._id.toString();
+    socket.userName = user.name;
+    next();
+  } catch { next(new Error('Non authentifié')); }
+});
+
+io.on('connection', (socket) => {
+  socket.on('join_conv', async (convId) => {
+    const conv = await Conversation.findById(convId).catch(() => null);
+    if (conv?.participants.some(p => p.toString() === socket.userId))
+      socket.join('conv_' + convId);
+  });
+  socket.on('leave_conv', (convId) => socket.leave('conv_' + convId));
+});
 
 // ═══════════════════════════════════════════════════════════════
 //  ROUTES
 // ═══════════════════════════════════════════════════════════════
 
-// ── HEALTH ────────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => {
-  res.json({ success:true, message:'Makario API opérationnelle', version:'1.0.0' });
-});
+app.get('/api/health', (_req, res) => res.json({ success:true, message:'Makario API v2.0 — MongoDB', uptime: process.uptime() }));
 
-// ── AUTH ──────────────────────────────────────────────────────────
+// ── AUTH ──────────────────────────────────────────────────────
 app.post('/api/auth/register', async (req, res) => {
-  const { name, email, password, company } = req.body;
-  if (!name || !email || !password)
-    return res.json({ success:false, error:'Champs requis manquants' });
-  if (db.users.find(u => u.email === email))
-    return res.json({ success:false, error:'Email déjà utilisé' });
+  try {
+    const { name, email, password, company } = req.body;
+    if (!name || !email || !password)
+      return res.json({ success:false, error:'Champs requis manquants' });
+    if (await User.findOne({ email: email.toLowerCase() }))
+      return res.json({ success:false, error:'Email déjà utilisé' });
 
-  const hashed = await bcrypt.hash(password, 10);
-  const user = { id: db.nextId.user++, name, email, password:hashed, company: company||null, createdAt: new Date().toISOString() };
-  db.users.push(user);
+    const user = await User.create({ name, email: email.toLowerCase(), password: await bcrypt.hash(password, 10) });
 
-  const token = jwt.sign({ id:user.id }, JWT_SECRET, { expiresIn:'30d' });
-  res.json({ success:true, data:{ token, user:safeUser(user) } });
+    if (company?.name) {
+      await Company.create({
+        name: company.name, sector: company.sector||'', city: company.city||'',
+        services: company.services||'', cover:'🏢',
+        init: company.name.slice(0,2).toUpperCase(), ownerId: user._id
+      });
+    }
+
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn:'30d' });
+    res.json({ success:true, data:{ token, user:safeUser(user) } });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  const user = db.users.find(u => u.email === email);
-  if (!user) return res.json({ success:false, error:'Email ou mot de passe incorrect' });
-
-  const ok = await bcrypt.compare(password, user.password);
-  if (!ok) return res.json({ success:false, error:'Email ou mot de passe incorrect' });
-
-  const token = jwt.sign({ id:user.id }, JWT_SECRET, { expiresIn:'30d' });
-  res.json({ success:true, data:{ token, user:safeUser(user) } });
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email: email?.toLowerCase() });
+    if (!user || !await bcrypt.compare(password, user.password))
+      return res.json({ success:false, error:'Email ou mot de passe incorrect' });
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn:'30d' });
+    res.json({ success:true, data:{ token, user:safeUser(user) } });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   res.json({ success:true, data:safeUser(req.user) });
 });
 
-app.put('/api/auth/profile', authMiddleware, (req, res) => {
-  const user = db.users.find(u => u.id === req.user.id);
-  if (!user) return res.json({ success:false, error:'Utilisateur introuvable' });
-  const { name, profession, city, avatar } = req.body;
-  if (name) user.name = name;
-  if (profession !== undefined) user.profession = profession;
-  if (city !== undefined) user.city = city;
-  if (avatar !== undefined) user.avatar = avatar;
-  res.json({ success:true, data:safeUser(user) });
+app.put('/api/auth/profile', authMiddleware, async (req, res) => {
+  try {
+    const { name, profession, city, avatar } = req.body;
+    const upd = {};
+    if (name) upd.name = name;
+    if (profession !== undefined) upd.profession = profession;
+    if (city !== undefined) upd.city = city;
+    if (avatar !== undefined) upd.avatar = avatar;
+    const user = await User.findByIdAndUpdate(req.user._id, upd, { new:true });
+    res.json({ success:true, data:safeUser(user) });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-// ── COMPANIES ─────────────────────────────────────────────────────
-app.get('/api/companies', (req, res) => {
-  res.json({ success:true, data:db.companies });
+// ── COMPANIES ─────────────────────────────────────────────────
+app.get('/api/companies', async (_req, res) => {
+  try {
+    res.json({ success:true, data: await Company.find().sort({ createdAt:1 }) });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-app.get('/api/companies/:id', (req, res) => {
-  const c = db.companies.find(c => c.id === parseInt(req.params.id));
-  if (!c) return res.json({ success:false, error:'Entreprise introuvable' });
-  res.json({ success:true, data:c });
+app.get('/api/companies/:id', async (req, res) => {
+  try {
+    const c = await Company.findById(req.params.id);
+    if (!c) return res.json({ success:false, error:'Entreprise introuvable' });
+    res.json({ success:true, data:c });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-app.post('/api/companies', authMiddleware, (req, res) => {
-  const { name, sector, city, services, vision, address } = req.body;
-  if (!name || !sector) return res.json({ success:false, error:'Nom et secteur requis' });
-  const c = {
-    id: db.nextId.company++,
-    name, sector, city: city||'', services: services||'', vision: vision||'',
-    address: address||'', cover:'🏢', init: name.slice(0,2).toUpperCase(),
-    ownerId: req.user.id, createdAt: new Date().toISOString()
-  };
-  db.companies.push(c);
-  res.json({ success:true, data:c });
-});
-
-// ── SECTORS ───────────────────────────────────────────────────────
-app.get('/api/sectors', (req, res) => {
-  res.json({ success:true, data:db.sectors });
-});
-
-// ── NEWS ──────────────────────────────────────────────────────────
-app.get('/api/news', (req, res) => {
-  res.json({ success:true, data:[...db.news].reverse() });
-});
-
-app.post('/api/news', authMiddleware, (req, res) => {
-  const { title, body, emoji } = req.body;
-  if (!title || !body) return res.json({ success:false, error:'Titre et contenu requis' });
-  const n = {
-    id: db.nextId.news++,
-    company: req.user.name,
-    avatar: req.user.name.slice(0,2).toUpperCase(),
-    title, body, emoji: emoji||'📢',
-    date: new Date().toISOString(),
-    likes: 0, authorId: req.user.id
-  };
-  db.news.push(n);
-  res.json({ success:true, data:n });
-});
-
-app.post('/api/news/:id/like', authMiddleware, (req, res) => {
-  const n = db.news.find(x => x.id === parseInt(req.params.id));
-  if (!n) return res.json({ success:false, error:'Publication introuvable' });
-  const uid = req.user.id;
-  if (!db.newsLikes[n.id]) db.newsLikes[n.id] = [];
-  if (!db.newsLikes[n.id].includes(uid)) {
-    db.newsLikes[n.id].push(uid);
-    n.likes++;
-  }
-  res.json({ success:true, data:n });
-});
-
-app.post('/api/news/:id/unlike', authMiddleware, (req, res) => {
-  const n = db.news.find(x => x.id === parseInt(req.params.id));
-  if (!n) return res.json({ success:false, error:'Publication introuvable' });
-  const uid = req.user.id;
-  if (db.newsLikes[n.id]) {
-    const idx = db.newsLikes[n.id].indexOf(uid);
-    if (idx > -1) { db.newsLikes[n.id].splice(idx,1); n.likes = Math.max(0, n.likes-1); }
-  }
-  res.json({ success:true, data:n });
-});
-
-// ── FAVORITES ─────────────────────────────────────────────────────
-app.get('/api/favorites', authMiddleware, (req, res) => {
-  const favIds = db.favorites[req.user.id] || [];
-  const list = db.companies.filter(c => favIds.includes(c.id));
-  res.json({ success:true, data:list });
-});
-
-app.post('/api/favorites/:companyId', authMiddleware, (req, res) => {
-  const cid = parseInt(req.params.companyId);
-  if (!db.favorites[req.user.id]) db.favorites[req.user.id] = [];
-  if (db.favorites[req.user.id].includes(cid))
-    return res.json({ success:false, error:'Déjà en favoris' });
-  db.favorites[req.user.id].push(cid);
-  res.json({ success:true });
-});
-
-app.delete('/api/favorites/:companyId', authMiddleware, (req, res) => {
-  const cid = parseInt(req.params.companyId);
-  if (db.favorites[req.user.id]) {
-    db.favorites[req.user.id] = db.favorites[req.user.id].filter(id => id !== cid);
-  }
-  res.json({ success:true });
-});
-
-// ── CONVERSATIONS & MESSAGES ──────────────────────────────────────
-app.get('/api/conversations', authMiddleware, (req, res) => {
-  const uid = req.user.id;
-  const list = db.conversations
-    .filter(c => c.participants.includes(uid))
-    .map(c => {
-      const msgs = db.messages[c.id] || [];
-      const last = msgs[msgs.length-1];
-      return { ...c, preview: last?.text?.slice(0,40)||'', time: last?.date||c.createdAt, unread:0 };
+app.post('/api/companies', authMiddleware, async (req, res) => {
+  try {
+    const { name, sector, city, services, vision, address } = req.body;
+    if (!name || !sector) return res.json({ success:false, error:'Nom et secteur requis' });
+    const c = await Company.create({
+      name, sector, city:city||'', services:services||'', vision:vision||'',
+      address:address||'', cover:'🏢', init:name.slice(0,2).toUpperCase(), ownerId:req.user._id
     });
-  res.json({ success:true, data:list });
+    res.json({ success:true, data:c });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-app.post('/api/conversations', authMiddleware, (req, res) => {
-  const { recipientId, companyId } = req.body;
-  const uid = req.user.id;
-  const existing = db.conversations.find(c =>
-    c.participants.includes(uid) && c.participants.includes(recipientId||0)
-  );
-  if (existing) return res.json({ success:true, data:existing });
-
-  const conv = {
-    id: db.nextId.conv++,
-    participants: [uid, recipientId||99],
-    companyId: companyId||null,
-    name: req.body.name || 'Conversation',
-    init: req.body.init || '?',
-    createdAt: new Date().toISOString()
-  };
-  db.conversations.push(conv);
-  db.messages[conv.id] = [];
-  res.json({ success:true, data:conv });
+// ── SECTORS ───────────────────────────────────────────────────
+app.get('/api/sectors', async (_req, res) => {
+  try {
+    res.json({ success:true, data: await Sector.find() });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-app.get('/api/conversations/:id/messages', authMiddleware, (req, res) => {
-  const cid = parseInt(req.params.id);
-  const msgs = (db.messages[cid] || []).map(m => ({
-    ...m, sent: m.senderId === req.user.id
-  }));
-  res.json({ success:true, data:msgs });
+// ── NEWS ──────────────────────────────────────────────────────
+app.get('/api/news', async (_req, res) => {
+  try {
+    res.json({ success:true, data: await News.find().sort({ date:-1 }) });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-app.post('/api/conversations/:id/messages', authMiddleware, (req, res) => {
-  const cid = parseInt(req.params.id);
-  const { text } = req.body;
-  if (!text) return res.json({ success:false, error:'Message vide' });
-  if (!db.messages[cid]) db.messages[cid] = [];
-  const msg = { id: Date.now(), senderId: req.user.id, text, date: new Date().toISOString() };
-  db.messages[cid].push(msg);
-  io.to('conv_' + cid).emit('new_message', { ...msg, sent: false });
-  res.json({ success:true, data:{ ...msg, sent:true } });
+app.post('/api/news', authMiddleware, async (req, res) => {
+  try {
+    const { title, body, emoji, image } = req.body;
+    if (!title || !body) return res.json({ success:false, error:'Titre et contenu requis' });
+    const n = await News.create({
+      company: req.user.name,
+      avatar:  req.user.name.slice(0,2).toUpperCase(),
+      title, body, emoji: emoji||'📢',
+      image: image||null, authorId: req.user._id
+    });
+    res.json({ success:true, data:n });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-// ── STATS ─────────────────────────────────────────────────────────
-app.get('/api/stats', (req, res) => {
-  res.json({ success:true, data:{
-    totalCompanies: db.companies.length,
-    totalUsers:     db.users.length,
-    totalNews:      db.news.length,
-    totalSectors:   db.sectors.length
-  }});
+app.post('/api/news/:id/like', authMiddleware, async (req, res) => {
+  try {
+    const n = await News.findById(req.params.id);
+    if (!n) return res.json({ success:false, error:'Publication introuvable' });
+    if (!n.likedBy.some(id => id.equals(req.user._id))) {
+      n.likedBy.push(req.user._id);
+      n.likes++;
+      await n.save();
+    }
+    res.json({ success:true, data:n });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-// ── SUBSCRIPTIONS ─────────────────────────────────────────────────
-app.get('/api/subscriptions', authMiddleware, (req, res) => {
-  const sub = db.subscriptions[req.user.id] || null;
-  res.json({ success:true, data:sub });
+app.post('/api/news/:id/unlike', authMiddleware, async (req, res) => {
+  try {
+    const n = await News.findById(req.params.id);
+    if (!n) return res.json({ success:false, error:'Publication introuvable' });
+    n.likedBy = n.likedBy.filter(id => !id.equals(req.user._id));
+    n.likes   = n.likedBy.length;
+    await n.save();
+    res.json({ success:true, data:n });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-app.post('/api/subscriptions', authMiddleware, (req, res) => {
-  const { plan, method, price } = req.body;
-  const sub = { plan, method, price, activatedAt: new Date().toISOString(), userId: req.user.id };
-  db.subscriptions[req.user.id] = sub;
-  res.json({ success:true, data:sub });
+// ── FAVORITES ─────────────────────────────────────────────────
+app.get('/api/favorites', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).populate('favorites');
+    res.json({ success:true, data: user.favorites });
+  } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-// ── UPLOAD IMAGE ──────────────────────────────────────────────────
+app.post('/api/favorites/:companyId', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (user.favorites.some(id => id.toString() === req.params.companyId))
+      return res.json({ success:false, error:'Déjà en favoris' });
+    user.favorites.push(req.params.companyId);
+    await user.save();
+    res.json({ success:true });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.delete('/api/favorites/:companyId', authMiddleware, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { $pull:{ favorites: req.params.companyId } });
+    res.json({ success:true });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+// ── CONVERSATIONS ─────────────────────────────────────────────
+app.get('/api/conversations', authMiddleware, async (req, res) => {
+  try {
+    const uid = req.user._id;
+    const convs = await Conversation.find({ participants: uid }).sort({ createdAt:-1 });
+
+    const result = await Promise.all(convs.map(async (c) => {
+      const lastMsg = await Message.findOne({ conversationId: c._id }).sort({ date:-1 });
+      const otherId = c.participants.find(p => !p.equals(uid));
+      const other   = otherId ? await User.findById(otherId).lean().catch(()=>null) : null;
+      return {
+        ...c.toJSON(),
+        name:    c.name || other?.name || 'Conversation',
+        init:    c.init || other?.name?.slice(0,2).toUpperCase() || '?',
+        preview: lastMsg?.text?.slice(0,40) || '',
+        time:    lastMsg?.date || c.createdAt,
+        unread:  0
+      };
+    }));
+    res.json({ success:true, data:result });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.post('/api/conversations', authMiddleware, async (req, res) => {
+  try {
+    const { recipientId, companyId } = req.body;
+    const uid = req.user._id;
+
+    // Look for company info to name the conversation
+    const company = companyId ? await Company.findById(companyId).lean().catch(()=>null) : null;
+    const recipient = recipientId ? await User.findById(recipientId).lean().catch(()=>null) : null;
+    const convName = company?.name || recipient?.name || 'Conversation';
+    const convInit = company?.init || recipient?.name?.slice(0,2).toUpperCase() || '?';
+
+    // Check if conversation already exists with this name/company
+    const existing = await Conversation.findOne({ participants: uid, name: convName });
+    if (existing) return res.json({ success:true, data:existing });
+
+    // Build participants array
+    const others = [];
+    if (recipient) others.push(recipient._id);
+    else if (company?.ownerId) others.push(company.ownerId);
+
+    const conv = await Conversation.create({
+      participants: [uid, ...others],
+      name: convName,
+      init: convInit
+    });
+    res.json({ success:true, data:conv });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.get('/api/conversations/:id/messages', authMiddleware, async (req, res) => {
+  try {
+    const msgs = await Message.find({ conversationId: req.params.id }).sort({ date:1 });
+    const uid  = req.user._id.toString();
+    res.json({ success:true, data: msgs.map(m => ({ ...m.toJSON(), sent: m.senderId.toString() === uid })) });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.post('/api/conversations/:id/messages', authMiddleware, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text?.trim()) return res.json({ success:false, error:'Message vide' });
+    const msg = await Message.create({
+      conversationId: req.params.id,
+      senderId: req.user._id,
+      text: text.trim()
+    });
+    io.to('conv_' + req.params.id).emit('new_message', { ...msg.toJSON(), sent:false, conversationId: req.params.id });
+    res.json({ success:true, data:{ ...msg.toJSON(), sent:true } });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+// ── STATS ─────────────────────────────────────────────────────
+app.get('/api/stats', async (_req, res) => {
+  try {
+    const [totalCompanies, totalUsers, totalNews, totalSectors] = await Promise.all([
+      Company.countDocuments(),
+      User.countDocuments(),
+      News.countDocuments(),
+      Sector.countDocuments()
+    ]);
+    res.json({ success:true, data:{ totalCompanies, totalUsers, totalNews, totalSectors } });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+// ── SUBSCRIPTIONS ─────────────────────────────────────────────
+app.get('/api/subscriptions', authMiddleware, async (req, res) => {
+  try {
+    res.json({ success:true, data: await Subscription.findOne({ userId: req.user._id }) });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.post('/api/subscriptions', authMiddleware, async (req, res) => {
+  try {
+    const { plan, method, price } = req.body;
+    const sub = await Subscription.findOneAndUpdate(
+      { userId: req.user._id },
+      { plan, method, price, activatedAt: new Date() },
+      { upsert:true, new:true }
+    );
+    res.json({ success:true, data:sub });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+// ── UPLOAD ────────────────────────────────────────────────────
 app.post('/api/upload', authMiddleware, upload.single('file'), (req, res) => {
   if (!req.file) return res.json({ success:false, error:'Aucun fichier reçu' });
-  const url = `/uploads/${req.file.filename}`;
-  res.json({ success:true, data:{ url, filename: req.file.filename, size: req.file.size } });
+  res.json({ success:true, data:{ url:`/uploads/${req.file.filename}`, filename:req.file.filename, size:req.file.size } });
 });
-
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// ── 404 ───────────────────────────────────────────────────────────
-app.use((req, res) => {
-  res.status(404).json({ success:false, error:'Route introuvable' });
-});
+// ── 404 ───────────────────────────────────────────────────────
+app.use((_req, res) => res.status(404).json({ success:false, error:'Route introuvable' }));
 
-// ─── DÉMARRAGE ────────────────────────────────────────────────────
+// ─── DÉMARRAGE ────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
   console.log('');
-  console.log('╔════════════════════════════════════════════╗');
-  console.log('║   Makario API — démarré (mode mémoire)     ║');
-  console.log('╠════════════════════════════════════════════╣');
-  console.log(`║   → http://localhost:${PORT}/api/health        ║`);
-  console.log('║   → Socket.io : actif                      ║');
-  console.log('║   → Upload    : /api/upload                ║');
-  console.log('╚════════════════════════════════════════════╝');
-  console.log('');
+  console.log('╔════════════════════════════════════════════════╗');
+  console.log('║   MAKARIO API v2.0 — Node + MongoDB            ║');
+  console.log('╠════════════════════════════════════════════════╣');
+  console.log(`║   Port : ${PORT}                                    ║`);
+  console.log(`║   DB   : ${MONGODB_URI.includes('atlas') ? 'MongoDB Atlas ✅' : 'MongoDB Local  ⚠️'}  ║`);
+  console.log('╚════════════════════════════════════════════════╝');
 });
