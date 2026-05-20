@@ -505,6 +505,6 @@ httpServer.listen(PORT, () => {
   console.log('║   MAKARIO API v2.0 — Node + MongoDB            ║');
   console.log('╠════════════════════════════════════════════════╣');
   console.log(`║   Port : ${PORT}                                    ║`);
-  console.log(`║   DB   : ${MONGODB_URI.includes('atlas') ? 'MongoDB Atlas ✅' : 'MongoDB Local  ⚠️'}  ║`);
+  console.log(`║   DB   : ${MONGODB_URI.includes('mongodb+srv') ? 'MongoDB Atlas ✅' : 'MongoDB Local  ⚠️'}  ║`);
   console.log('╚════════════════════════════════════════════════╝');
 });
