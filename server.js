@@ -12,7 +12,6 @@ const multer     = require('multer');
 const mongoose   = require('mongoose');
 const { Server } = require('socket.io');
 const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app        = express();
 const httpServer = http.createServer(app);
@@ -37,13 +36,8 @@ cloudinary.config({
   api_secret:  process.env.CLOUDINARY_API_SECRET,
 });
 
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: { folder: 'makario', allowed_formats: ['jpg','jpeg','png','gif','webp'], transformation: [{ width: 800, crop: 'limit' }] },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     /jpeg|jpg|png|gif|webp/.test(file.mimetype) ? cb(null, true) : cb(new Error('Images uniquement'));
@@ -494,9 +488,19 @@ app.post('/api/subscriptions', authMiddleware, async (req, res) => {
 });
 
 // ── UPLOAD ────────────────────────────────────────────────────
-app.post('/api/upload', authMiddleware, upload.single('file'), (req, res) => {
+app.post('/api/upload', authMiddleware, upload.single('file'), async (req, res) => {
   if (!req.file) return res.json({ success:false, error:'Aucun fichier reçu' });
-  res.json({ success:true, data:{ url: req.file.path, filename: req.file.filename, size: req.file.size } });
+  try {
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        { folder: 'makario', transformation: [{ width: 800, crop: 'limit' }] },
+        (err, data) => err ? reject(err) : resolve(data)
+      ).end(req.file.buffer);
+    });
+    res.json({ success:true, data:{ url: result.secure_url, filename: result.public_id, size: req.file.size } });
+  } catch(err) {
+    res.json({ success:false, error: err.message });
+  }
 });
 
 // ── 404 ───────────────────────────────────────────────────────
