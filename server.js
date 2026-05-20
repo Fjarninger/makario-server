@@ -8,11 +8,11 @@ const http       = require('http');
 const cors       = require('cors');
 const bcrypt     = require('bcryptjs');
 const jwt        = require('jsonwebtoken');
-const path       = require('path');
-const fs         = require('fs');
 const multer     = require('multer');
 const mongoose   = require('mongoose');
 const { Server } = require('socket.io');
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 const app        = express();
 const httpServer = http.createServer(app);
@@ -30,15 +30,20 @@ mongoose.connect(MONGODB_URI)
 app.use(cors());
 app.use(express.json());
 
-// ─── UPLOAD ──────────────────────────────────────────────────
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// ─── CLOUDINARY ───────────────────────────────────────────────
+cloudinary.config({
+  cloud_name:  process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:     process.env.CLOUDINARY_API_KEY,
+  api_secret:  process.env.CLOUDINARY_API_SECRET,
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: { folder: 'makario', allowed_formats: ['jpg','jpeg','png','gif','webp'], transformation: [{ width: 800, crop: 'limit' }] },
+});
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-    filename:    (_req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random()*1e6) + path.extname(file.originalname).toLowerCase()),
-  }),
+  storage,
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     /jpeg|jpg|png|gif|webp/.test(file.mimetype) ? cb(null, true) : cb(new Error('Images uniquement'));
@@ -491,9 +496,8 @@ app.post('/api/subscriptions', authMiddleware, async (req, res) => {
 // ── UPLOAD ────────────────────────────────────────────────────
 app.post('/api/upload', authMiddleware, upload.single('file'), (req, res) => {
   if (!req.file) return res.json({ success:false, error:'Aucun fichier reçu' });
-  res.json({ success:true, data:{ url:`/uploads/${req.file.filename}`, filename:req.file.filename, size:req.file.size } });
+  res.json({ success:true, data:{ url: req.file.path, filename: req.file.filename, size: req.file.size } });
 });
-app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ── 404 ───────────────────────────────────────────────────────
 app.use((_req, res) => res.status(404).json({ success:false, error:'Route introuvable' }));
