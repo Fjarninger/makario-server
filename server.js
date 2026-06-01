@@ -97,7 +97,7 @@ const CompanySchema = new mongoose.Schema({
   phone:     { type: String, default: '' },
   website:   { type: String, default: '' },
   cover:     { type: String, default: '🏢' },
-  init:      { type: String, default: '?' },
+  initials:  { type: String, default: '?' },
   ownerId:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   verified:  { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
@@ -127,7 +127,7 @@ const NewsSchema = new mongoose.Schema({
 const ConversationSchema = new mongoose.Schema({
   participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   name:      { type: String, default: 'Conversation' },
-  init:      { type: String, default: '?' },
+  initials:  { type: String, default: '?' },
   createdAt: { type: Date, default: Date.now }
 }, toJSON);
 
@@ -162,14 +162,14 @@ async function seedDB() {
   // Entreprises
   if (await Company.countDocuments() === 0) {
     await Company.insertMany([
-      { name:'SIGTH-TECH CONGO',  sector:'TIC',                   city:'Brazzaville', services:"Développement web et mobile, solutions informatiques sur mesure, hébergement cloud.", vision:"Être le partenaire N°1 du peuple congolais dans le domaine des TIC.", address:'84, Rue Mayama, Brazzaville', cover:'💻', init:'ST', verified:true },
-      { name:'BEST INFORMATIQUE', sector:'TIC',                   city:'Pointe-Noire', services:"Vente de matériel informatique, maintenance, formation, réseaux.", vision:"Digitaliser les entreprises congolaises à moindre coût.", address:'Centre-ville, Pointe-Noire', cover:'🖥️', init:'BI' },
-      { name:'EGCM',              sector:'Éducation & Formation', city:'Brazzaville', services:"Formation professionnelle qualifiante, coaching emploi, stages en entreprise.", vision:"Former la jeunesse congolaise pour l'emploi de demain.", address:'84, Rue Mayama, Immeuble BGF1', cover:'📚', init:'EG', verified:true },
-      { name:'AOFIP',             sector:'Éducation & Formation', city:'Brazzaville', services:"Formation professionnelle et qualifiante, insertion professionnelle, coaching.", vision:"Vers l'emploi, mais pas seul.", address:'Rue Matsoua, Brazzaville', cover:'🎓', init:'AO' },
-      { name:'AI COMMUNICATION',  sector:'TIC',                   city:'Brazzaville', services:"Agence de communication digitale, création de contenu, réseaux sociaux, branding.", vision:"Booster la visibilité des marques congolaises.", address:'Plateau de 15 ans, Brazzaville', cover:'📡', init:'AI' },
-      { name:'MAGIC DESIGN',      sector:'Culture & Arts',        city:'Pointe-Noire', services:"Design graphique, identité visuelle, création de logo, impression.", vision:"L'art au service des entreprises.", address:'Lumumba, Pointe-Noire', cover:'🎨', init:'MD' },
-      { name:'MUSAS CONGO',       sector:'Commerce',              city:'Brazzaville', services:"Distribution alimentaire, import-export, grossiste, livraison.", vision:"Nourrir le Congo, de Brazzaville à Owando.", address:'Marché Total, Brazzaville', cover:'🛒', init:'MC' },
-      { name:'BTP PRO CONGO',     sector:'BTP',                   city:'Dolisie',     services:"Construction, rénovation, génie civil, architecture, études techniques.", vision:"Bâtir le Congo moderne, pierre par pierre.", address:'Centre, Dolisie', cover:'🏗️', init:'BP' },
+      { name:'SIGTH-TECH CONGO',  sector:'TIC',                   city:'Brazzaville', services:"Développement web et mobile, solutions informatiques sur mesure, hébergement cloud.", vision:"Être le partenaire N°1 du peuple congolais dans le domaine des TIC.", address:'84, Rue Mayama, Brazzaville', cover:'💻', initials:'ST', verified:true },
+      { name:'BEST INFORMATIQUE', sector:'TIC',                   city:'Pointe-Noire', services:"Vente de matériel informatique, maintenance, formation, réseaux.", vision:"Digitaliser les entreprises congolaises à moindre coût.", address:'Centre-ville, Pointe-Noire', cover:'🖥️', initials:'BI' },
+      { name:'EGCM',              sector:'Éducation & Formation', city:'Brazzaville', services:"Formation professionnelle qualifiante, coaching emploi, stages en entreprise.", vision:"Former la jeunesse congolaise pour l'emploi de demain.", address:'84, Rue Mayama, Immeuble BGF1', cover:'📚', initials:'EG', verified:true },
+      { name:'AOFIP',             sector:'Éducation & Formation', city:'Brazzaville', services:"Formation professionnelle et qualifiante, insertion professionnelle, coaching.", vision:"Vers l'emploi, mais pas seul.", address:'Rue Matsoua, Brazzaville', cover:'🎓', initials:'AO' },
+      { name:'AI COMMUNICATION',  sector:'TIC',                   city:'Brazzaville', services:"Agence de communication digitale, création de contenu, réseaux sociaux, branding.", vision:"Booster la visibilité des marques congolaises.", address:'Plateau de 15 ans, Brazzaville', cover:'📡', initials:'AI' },
+      { name:'MAGIC DESIGN',      sector:'Culture & Arts',        city:'Pointe-Noire', services:"Design graphique, identité visuelle, création de logo, impression.", vision:"L'art au service des entreprises.", address:'Lumumba, Pointe-Noire', cover:'🎨', initials:'MD' },
+      { name:'MUSAS CONGO',       sector:'Commerce',              city:'Brazzaville', services:"Distribution alimentaire, import-export, grossiste, livraison.", vision:"Nourrir le Congo, de Brazzaville à Owando.", address:'Marché Total, Brazzaville', cover:'🛒', initials:'MC' },
+      { name:'BTP PRO CONGO',     sector:'BTP',                   city:'Dolisie',     services:"Construction, rénovation, génie civil, architecture, études techniques.", vision:"Bâtir le Congo moderne, pierre par pierre.", address:'Centre, Dolisie', cover:'🏗️', initials:'BP' },
     ]);
     console.log('✅ Entreprises initiales créées');
   }
@@ -201,7 +201,11 @@ async function seedDB() {
     console.log('✅ Publications initiales créées');
   }
 }
-mongoose.connection.once('open', seedDB);
+mongoose.connection.once('open', async () => {
+  await seedDB();
+  await Company.updateMany({ initials:{ $exists:false }, init:{ $exists:true } }, [{ $set:{ initials:'$init' } }]).catch(()=>{});
+  await Conversation.updateMany({ initials:{ $exists:false }, init:{ $exists:true } }, [{ $set:{ initials:'$init' } }]).catch(()=>{});
+});
 
 // ─── HELPERS ─────────────────────────────────────────────────
 function safeUser(u) {
@@ -266,7 +270,7 @@ app.post('/api/auth/register', authLimiter, async (req, res) => {
       await Company.create({
         name: company.name, sector: company.sector||'', city: company.city||'',
         services: company.services||'', cover:'🏢',
-        init: company.name.slice(0,2).toUpperCase(), ownerId: user._id
+        initials: company.name.slice(0,2).toUpperCase(), ownerId: user._id
       });
     }
 
@@ -335,7 +339,7 @@ app.post('/api/companies', authMiddleware, async (req, res) => {
     if (!name || !sector) return res.json({ success:false, error:'Nom et secteur requis' });
     const c = await Company.create({
       name, sector, city:city||'', services:services||'', vision:vision||'',
-      address:address||'', cover:'🏢', init:name.slice(0,2).toUpperCase(), ownerId:req.user._id
+      address:address||'', cover:'🏢', initials:name.slice(0,2).toUpperCase(), ownerId:req.user._id
     });
     res.json({ success:true, data:c });
   } catch(e) { res.json({ success:false, error:e.message }); }
@@ -350,7 +354,7 @@ app.patch('/api/companies/:id', authMiddleware, async (req, res) => {
     const allowed = ['name','sector','city','services','vision','address','phone','website'];
     const upd = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) upd[k] = req.body[k]; });
-    if (upd.name) upd.init = upd.name.slice(0,2).toUpperCase();
+    if (upd.name) upd.initials = upd.name.slice(0,2).toUpperCase();
     const updated = await Company.findByIdAndUpdate(req.params.id, upd, { new:true });
     res.json({ success:true, data:updated });
   } catch(e) { res.json({ success:false, error:e.message }); }
@@ -468,8 +472,8 @@ app.get('/api/conversations', authMiddleware, async (req, res) => {
       const other   = otherId ? await User.findById(otherId).lean().catch(()=>null) : null;
       return {
         ...c.toJSON(),
-        name:    c.name || other?.name || 'Conversation',
-        init:    c.init || other?.name?.slice(0,2).toUpperCase() || '?',
+        name:     c.name || other?.name || 'Conversation',
+        initials: c.initials || other?.name?.slice(0,2).toUpperCase() || '?',
         preview: lastMsg?.text?.slice(0,40) || '',
         time:    lastMsg?.date || c.createdAt,
         unread:  0
@@ -502,7 +506,7 @@ app.post('/api/conversations', authMiddleware, async (req, res) => {
     const conv = await Conversation.create({
       participants: [uid, ...others],
       name: convName,
-      init: convInit
+      initials: convInit
     });
     res.json({ success:true, data:conv });
   } catch(e) { res.json({ success:false, error:e.message }); }
