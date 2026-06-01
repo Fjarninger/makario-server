@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════
-//  MAKARIO BACKEND — server.js  v2.0
+//  MAKARIO BACKEND — server.js  v2.1
 //  Stack : Node.js + Express + Socket.io + MongoDB (Mongoose)
 // ═══════════════════════════════════════════════════════════════
 
@@ -12,22 +12,46 @@ const multer     = require('multer');
 const mongoose   = require('mongoose');
 const { Server } = require('socket.io');
 const cloudinary = require('cloudinary').v2;
+const rateLimit  = require('express-rate-limit');
 
 const app        = express();
 const httpServer = http.createServer(app);
-const io         = new Server(httpServer, { cors: { origin: '*', methods: ['GET','POST'] } });
 
 const PORT        = process.env.PORT       || 3000;
 const JWT_SECRET  = process.env.JWT_SECRET || 'makario_secret_2024_congo';
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/makario';
+
+if (!process.env.JWT_SECRET)
+  console.warn("⚠️  JWT_SECRET non défini — ajoutez-le dans les variables d'environnement Render !");
+
+const ALLOWED_ORIGINS = [
+  'https://shimmering-gingersnap-5c4b72.netlify.app',
+  'http://localhost:3000',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+];
+
+const io = new Server(httpServer, {
+  cors: { origin: ALLOWED_ORIGINS, methods: ['GET', 'POST'] }
+});
 
 // ─── CONNEXION MONGODB ────────────────────────────────────────
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connecté'))
   .catch(err => { console.error('❌ MongoDB:', err.message); process.exit(1); });
 
-app.use(cors());
+app.use(cors({
+  origin: (origin, cb) => (!origin || ALLOWED_ORIGINS.includes(origin)) ? cb(null, true) : cb(new Error('CORS bloqué'))
+}));
 app.use(express.json());
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success:false, error:'Trop de tentatives. Réessayez dans 15 minutes.' }
+});
 
 // ─── CLOUDINARY ───────────────────────────────────────────────
 cloudinary.config({
@@ -225,7 +249,7 @@ io.on('connection', (socket) => {
 app.get('/api/health', (_req, res) => res.json({ success:true, message:'Makario API v2.0 — MongoDB', uptime: process.uptime() }));
 
 // ── AUTH ──────────────────────────────────────────────────────
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { name, email, password, company } = req.body;
     if (!name || !email || !password)
@@ -248,7 +272,7 @@ app.post('/api/auth/register', async (req, res) => {
   } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email: email?.toLowerCase() });
@@ -277,9 +301,20 @@ app.put('/api/auth/profile', authMiddleware, async (req, res) => {
 });
 
 // ── COMPANIES ─────────────────────────────────────────────────
-app.get('/api/companies', async (_req, res) => {
+app.get('/api/companies', async (req, res) => {
   try {
-    res.json({ success:true, data: await Company.find().sort({ createdAt:1 }) });
+    const { page=1, limit=50, sector, city, q } = req.query;
+    const filter = {};
+    if (sector) filter.sector = sector;
+    if (city)   filter.city   = city;
+    if (q)      filter.$or = [{ name:{ $regex:q, $options:'i' } },{ services:{ $regex:q, $options:'i' } }];
+    const skip = (Math.max(1, parseInt(page)) - 1) * Math.min(100, parseInt(limit));
+    const lim  = Math.min(100, parseInt(limit));
+    const [data, total] = await Promise.all([
+      Company.find(filter).sort({ createdAt:1 }).skip(skip).limit(lim),
+      Company.countDocuments(filter)
+    ]);
+    res.json({ success:true, data, pagination:{ page:parseInt(page), limit:lim, total, pages:Math.ceil(total/lim) } });
   } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
@@ -300,6 +335,32 @@ app.post('/api/companies', authMiddleware, async (req, res) => {
       address:address||'', cover:'🏢', init:name.slice(0,2).toUpperCase(), ownerId:req.user._id
     });
     res.json({ success:true, data:c });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.patch('/api/companies/:id', authMiddleware, async (req, res) => {
+  try {
+    const c = await Company.findById(req.params.id);
+    if (!c) return res.json({ success:false, error:'Entreprise introuvable' });
+    if (!c.ownerId?.equals(req.user._id))
+      return res.status(403).json({ success:false, error:'Non autorisé' });
+    const allowed = ['name','sector','city','services','vision','address','phone','website'];
+    const upd = {};
+    allowed.forEach(k => { if (req.body[k] !== undefined) upd[k] = req.body[k]; });
+    if (upd.name) upd.init = upd.name.slice(0,2).toUpperCase();
+    const updated = await Company.findByIdAndUpdate(req.params.id, upd, { new:true });
+    res.json({ success:true, data:updated });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.delete('/api/companies/:id', authMiddleware, async (req, res) => {
+  try {
+    const c = await Company.findById(req.params.id);
+    if (!c) return res.json({ success:false, error:'Entreprise introuvable' });
+    if (!c.ownerId?.equals(req.user._id))
+      return res.status(403).json({ success:false, error:'Non autorisé' });
+    await Company.findByIdAndDelete(req.params.id);
+    res.json({ success:true });
   } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
@@ -352,6 +413,17 @@ app.post('/api/news/:id/unlike', authMiddleware, async (req, res) => {
     n.likes   = n.likedBy.length;
     await n.save();
     res.json({ success:true, data:n });
+  } catch(e) { res.json({ success:false, error:e.message }); }
+});
+
+app.delete('/api/news/:id', authMiddleware, async (req, res) => {
+  try {
+    const n = await News.findById(req.params.id);
+    if (!n) return res.json({ success:false, error:'Publication introuvable' });
+    if (!n.authorId?.equals(req.user._id))
+      return res.status(403).json({ success:false, error:'Non autorisé' });
+    await News.findByIdAndDelete(req.params.id);
+    res.json({ success:true });
   } catch(e) { res.json({ success:false, error:e.message }); }
 });
 
