@@ -89,8 +89,8 @@ const UserSchema = new mongoose.Schema({
 
 const CompanySchema = new mongoose.Schema({
   name:      { type: String, required: true, trim: true },
-  sector:    { type: String, default: '' },
-  city:      { type: String, default: '' },
+  sector:    { type: String, default: '', index: true },
+  city:      { type: String, default: '', index: true },
   services:  { type: String, default: '' },
   vision:    { type: String, default: '' },
   address:   { type: String, default: '' },
@@ -132,7 +132,7 @@ const ConversationSchema = new mongoose.Schema({
 }, toJSON);
 
 const MessageSchema = new mongoose.Schema({
-  conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: true },
+  conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: true, index: true },
   senderId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   text:           { type: String, required: true },
   date:           { type: Date, default: Date.now }
@@ -145,6 +145,9 @@ const SubscriptionSchema = new mongoose.Schema({
   price:       { type: String, default: '0' },
   activatedAt: { type: Date, default: Date.now }
 }, toJSON);
+
+CompanySchema.index({ name: 'text', services: 'text' });
+ConversationSchema.index({ participants: 1 });
 
 const User         = mongoose.model('User', UserSchema);
 const Company      = mongoose.model('Company', CompanySchema);
