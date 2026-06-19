@@ -95,6 +95,7 @@ const CompanySchema = new mongoose.Schema({
   vision:    { type: String, default: '' },
   address:   { type: String, default: '' },
   phone:     { type: String, default: '' },
+  email:     { type: String, default: '' },
   website:   { type: String, default: '' },
   cover:     { type: String, default: '🏢' },
   initials:  { type: String, default: '?' },
@@ -351,7 +352,7 @@ app.patch('/api/companies/:id', authMiddleware, async (req, res) => {
     if (!c) return res.json({ success:false, error:'Entreprise introuvable' });
     if (!c.ownerId?.equals(req.user._id))
       return res.status(403).json({ success:false, error:'Non autorisé' });
-    const allowed = ['name','sector','city','services','vision','address','phone','website'];
+    const allowed = ['name','sector','city','services','vision','address','phone','email','website'];
     const upd = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) upd[k] = req.body[k]; });
     if (upd.name) upd.initials = upd.name.slice(0,2).toUpperCase();
@@ -492,7 +493,7 @@ app.post('/api/conversations', authMiddleware, async (req, res) => {
     const company = companyId ? await Company.findById(companyId).lean().catch(()=>null) : null;
     const recipient = recipientId ? await User.findById(recipientId).lean().catch(()=>null) : null;
     const convName = company?.name || recipient?.name || 'Conversation';
-    const convInit = company?.init || recipient?.name?.slice(0,2).toUpperCase() || '?';
+    const convInit = company?.initials || recipient?.name?.slice(0,2).toUpperCase() || '?';
 
     // Check if conversation already exists with this name/company
     const existing = await Conversation.findOne({ participants: uid, name: convName });
