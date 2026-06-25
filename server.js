@@ -83,6 +83,10 @@ const UserSchema = new mongoose.Schema({
   profession: { type: String, default: '' },
   city:       { type: String, default: '' },
   avatar:     { type: String, default: null },
+  bio:        { type: String, default: '' },
+  skills:     [{ type: String }],
+  experience: [{ title: String, company: String, period: String, desc: String }],
+  education:  [{ degree: String, school: String, year: String }],
   favorites:  [{ type: mongoose.Schema.Types.ObjectId, ref: 'Company' }],
   createdAt:  { type: Date, default: Date.now }
 }, toJSON);
@@ -297,12 +301,16 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
 
 app.put('/api/auth/profile', authMiddleware, async (req, res) => {
   try {
-    const { name, profession, city, avatar } = req.body;
+    const { name, profession, city, avatar, bio, skills, experience, education } = req.body;
     const upd = {};
     if (name) upd.name = name;
     if (profession !== undefined) upd.profession = profession;
     if (city !== undefined) upd.city = city;
     if (avatar !== undefined) upd.avatar = avatar;
+    if (bio !== undefined) upd.bio = bio;
+    if (skills !== undefined) upd.skills = Array.isArray(skills) ? skills : skills.split(',').map(s=>s.trim()).filter(Boolean);
+    if (experience !== undefined) upd.experience = experience;
+    if (education !== undefined) upd.education = education;
     const user = await User.findByIdAndUpdate(req.user._id, upd, { new:true });
     res.json({ success:true, data:safeUser(user) });
   } catch(e) { res.json({ success:false, error:e.message }); }
